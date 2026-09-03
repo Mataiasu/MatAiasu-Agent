@@ -1,52 +1,56 @@
 # MatAiasu Agent
 
-Local-first development agent designed to operate MatAiasu projects without being coupled to any single project.
+Local-first development agent designed to operate multiple MatAiasu projects without being coupled to any single project.
 
-## Vision
-
-MatAiasu Agent is the central development brain. Projects such as **MatAiasu 3D** and **Infinite Ascension** are registered workspaces, not dependencies of the agent.
+## Architecture
 
 ```text
-User request
-    ↓
+User
+  ↓
 MatAiasu Agent
-    ├── Memory
-    ├── Planner
-    ├── Permissions
-    ├── Tools
-    ├── Project Registry
-    └── History
-    ↓
-Inspect → Plan → Execute → Test → Report → Git
+  ├─ Core / task orchestration
+  ├─ Local model (Ollama)
+  ├─ Memory + append-only history
+  ├─ Project registry
+  ├─ Read-only workspace scanner
+  ├─ Permission gate
+  └─ Tools (filesystem / shell / Git / tests)
+  ↓
+Selected project
 ```
 
-## Current MVP
+Projects are workspaces, not dependencies. The Agent must inspect a workspace before changing it.
 
+## Safety model
+
+Read access is the default. Model output never grants permissions. File writes, command execution, Git operations and network access remain gated capabilities and will require explicit approval before autonomous execution is enabled.
+
+## Current version: 0.2.0
+
+Implemented:
 - Python 3.11+
 - local-first runtime
 - persistent JSON memory
+- append-only execution history
 - project registry
 - permission gate
-- filesystem tool
-- shell execution tool
-- task/event domain model
-- CLI
-- Ollama-ready configuration
+- read-only workspace scanner
+- filesystem and shell tool foundations
+- local Ollama client with availability check
+- interactive CLI with `/status`, `/scan` and `/ask`
+- CI test workflow
 
-The execution core is deliberately conservative at this stage: planning is enabled, while autonomous write/command permissions are not granted by default.
+## Next milestones
 
-## Planned modules
-
-- Ollama model adapter
-- structured planner and tool-calling loop
-- Git/GitHub integration
-- project scanner and codebase understanding
-- durable task/history database
-- Windows desktop interface
-- optional web/mobile interface
-- approval UI for sensitive operations
-- test/repair loop
-- plugin system
+1. Structured planner with machine-readable actions
+2. Tool registry and approval workflow
+3. Git integration and safe diff/rollback
+4. Automatic project detection and codebase summaries
+5. Test/build/repair loop
+6. SQLite memory and task history
+7. Windows desktop application
+8. Optional web/mobile client
+9. Plugin system
 
 ## Development
 
@@ -57,4 +61,4 @@ pip install -e ".[dev]"
 python -m agent.cli
 ```
 
-Type `exit` to stop the CLI.
+Optional environment variables are documented in `.env.example`.
