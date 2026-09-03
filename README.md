@@ -35,7 +35,7 @@ Implemented:
 - project technology detection
 - workspace boundary policy
 - permission-gated filesystem and command execution
-- machine-readable tool registry
+- machine-readable tool registry with runtime permission enforcement
 - read-only Git inspection tools
 - deterministic task planner
 - workspace and command validation
@@ -47,7 +47,7 @@ Implemented:
 
 ## Security defaults
 
-The default profile is read-only. Write, command and Git permissions are opt-in through environment variables:
+The default profile is read-only. Write, command and Git permissions are opt-in and independent:
 
 ```text
 MATAIASU_ALLOW_WRITE=1
@@ -55,7 +55,7 @@ MATAIASU_ALLOW_COMMANDS=1
 MATAIASU_ALLOW_GIT=1
 ```
 
-These permissions are independent. Enabling commands does not automatically enable writes or Git. Workspace paths are still constrained when a `WorkspacePolicy` is used.
+Workspace paths are constrained when a `WorkspacePolicy` is used. Unknown tools are rejected and model output cannot grant capabilities.
 
 ## CLI
 
@@ -70,7 +70,7 @@ These permissions are independent. Enabling commands does not automatically enab
 /update
 ```
 
-`/run` remains blocked unless `MATAIASU_ALLOW_COMMANDS=1` is set. The agent never treats model-generated text as permission to execute a command.
+`/run` is blocked unless `MATAIASU_ALLOW_COMMANDS=1` is set.
 
 ## Development
 
@@ -78,6 +78,7 @@ These permissions are independent. Enabling commands does not automatically enab
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
+python -m pytest -q
 python -m agent.cli
 ```
 
