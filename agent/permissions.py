@@ -11,7 +11,7 @@ class Permission(StrEnum):
 
 class PermissionManager:
     def __init__(self, granted: set[Permission] | None = None) -> None:
-        self.granted = granted or {Permission.READ_FILES}
+        self.granted = set(granted) if granted is not None else {Permission.READ_FILES}
 
     def allows(self, permission: Permission) -> bool:
         return permission in self.granted
