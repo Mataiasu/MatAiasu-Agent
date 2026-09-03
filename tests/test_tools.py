@@ -4,7 +4,7 @@ import pytest
 
 from agent.config import Settings
 from agent.core import MatAiasuAgent
-from agent.permissions import Permission
+from agent.permissions import Permission, PermissionManager
 from agent.tools.policy import WorkspacePolicy
 from agent.tools.registry import ToolRegistry
 
@@ -21,6 +21,7 @@ def test_tool_registry_exposes_permissioned_tools() -> None:
     assert tools["read_file"] == Permission.READ_FILES.value
     assert tools["write_file"] == Permission.WRITE_FILES.value
     assert tools["run_command"] == Permission.RUN_COMMANDS.value
+    assert tools["git_status"] == Permission.GIT.value
 
 
 def test_workspace_policy_blocks_escape(tmp_path: Path) -> None:
