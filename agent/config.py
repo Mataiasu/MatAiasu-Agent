@@ -14,6 +14,7 @@ class Settings:
     workspace_root: Path = field(default_factory=lambda: Path(os.getenv("MATAIASU_WORKSPACE", ".")))
     allow_write: bool = field(default_factory=lambda: os.getenv("MATAIASU_ALLOW_WRITE", "0").lower() in {"1", "true", "yes"})
     allow_commands: bool = field(default_factory=lambda: os.getenv("MATAIASU_ALLOW_COMMANDS", "0").lower() in {"1", "true", "yes"})
+    allow_git: bool = field(default_factory=lambda: os.getenv("MATAIASU_ALLOW_GIT", "0").lower() in {"1", "true", "yes"})
 
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
