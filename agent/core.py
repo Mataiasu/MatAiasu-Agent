@@ -6,9 +6,11 @@ from .config import Settings
 from .history import HistoryStore
 from .memory.store import MemoryStore
 from .models import Event, Task, TaskStatus
-from .ollama import OllamaClient, OllamaError
-from .permissions import PermissionManager
+from .ollama import OllamaClient
+from .permissions import Permission, PermissionManager
 from .projects import ProjectRegistry
+from .tools.files import FileTool
+from .tools.shell import ShellTool
 from .tools.workspace import WorkspaceScanner
 
 
@@ -36,6 +38,8 @@ class MatAiasuAgent:
         self.projects = ProjectRegistry(self.settings.data_dir)
         self.permissions = PermissionManager()
         self.scanner = WorkspaceScanner()
+        self.files = FileTool()
+        self.shell = ShellTool()
         self.model = OllamaClient(self.settings.ollama_url, self.settings.model_name)
 
     def create_task(self, objective: str, project: str | None = None) -> Task:
@@ -60,6 +64,30 @@ class MatAiasuAgent:
         task.result = "Inspection/planning mode completed; no write or command permission was used."
         self.history.append("task.planned", {"task_id": task.id, "objective": task.objective})
         events.append(Event("task.planned", task.result, {"task_id": task.id}))
+        return AgentResult(task, events)
+
+    def execute_readonly(self, objective: str, root: str | Path) -> AgentResult:
+        """Run a real, read-only task: scan workspace and persist the result."""
+        task = self.create_task(objective)
+        task.status = TaskStatus.RUNNING
+        events = [Event("task.created", objective, {"task_id": task.id})]
+        try:
+            self.permissions.require(Permission.READ_FILES)
+            scan = self.scan_workspace(root)
+            task.steps = ["Inspect workspace", "Collect file statistics", "Record results"]
+            task.status = TaskStatus.DONE
+            task.result = (
+                f"Workspace scanned: {scan['root']} | {scan['file_count']} files | "
+                f"extensions: {scan['extensions']}"
+            )
+            events.append(Event("workspace.scanned", task.result, scan))
+            self.memory.add(task.result, kind="execution")
+            self.history.append("task.completed", {"task_id": task.id, "result": task.result})
+        except (OSError, ValueError, PermissionError) as exc:
+            task.status = TaskStatus.BLOCKED if isinstance(exc, PermissionError) else TaskStatus.FAILED
+            task.result = str(exc)
+            events.append(Event("task.failed", task.result, {"task_id": task.id}))
+            self.history.append("task.failed", {"task_id": task.id, "error": task.result})
         return AgentResult(task, events)
 
     def ask_local_model(self, prompt: str) -> str:
