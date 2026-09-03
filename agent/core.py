@@ -41,7 +41,12 @@ class MatAiasuAgent:
         self.memory = MemoryStore(self.settings.data_dir)
         self.history = HistoryStore(self.settings.data_dir)
         self.projects = ProjectRegistry(self.settings.data_dir)
-        self.permissions = PermissionManager()
+        grants = {Permission.READ_FILES}
+        if self.settings.allow_write:
+            grants.add(Permission.WRITE_FILES)
+        if self.settings.allow_commands:
+            grants.add(Permission.RUN_COMMANDS)
+        self.permissions = PermissionManager(grants)
         self.scanner = WorkspaceScanner()
         self.files = FileTool()
         self.shell = ShellTool()
@@ -111,7 +116,7 @@ class MatAiasuAgent:
         return result
 
     def execute_command_task(self, objective: str, command: list[str], cwd: str | Path, timeout: int = 120) -> AgentResult:
-        """Execute one explicit command through the permissioned, bounded task lifecycle."""
+        """Execute one explicit command through the permissioned task lifecycle."""
         task = self.create_task(objective)
         task.status = TaskStatus.RUNNING
         events = [Event("task.created", objective, {"task_id": task.id, "command": command})]
@@ -121,12 +126,8 @@ class MatAiasuAgent:
             self.permissions.require(Permission.RUN_COMMANDS)
             code, stdout, stderr = self.executor.run_command(command, policy.root, timeout, policy)
             validation = self.validator.command(code, stdout, stderr)
-            if not validation.ok:
-                task.status = TaskStatus.FAILED
-                task.result = validation.message
-            else:
-                task.status = TaskStatus.DONE
-                task.result = validation.message
+            task.status = TaskStatus.DONE if validation.ok else TaskStatus.FAILED
+            task.result = validation.message
             events.append(Event("command.executed", task.result, {"returncode": code}))
             self.history.append("task.completed" if task.status == TaskStatus.DONE else "task.failed", {
                 "task_id": task.id, "command": command, "returncode": code, "result": task.result,
