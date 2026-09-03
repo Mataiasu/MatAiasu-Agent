@@ -8,7 +8,7 @@ from .core import MatAiasuAgent
 from .ollama import OllamaError
 from .updater import check_update, launch_update
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 
 
 def _auto_update() -> None:
