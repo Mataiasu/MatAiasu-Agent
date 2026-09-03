@@ -24,7 +24,7 @@ Selected project workspace
 
 Projects are workspaces, not dependencies. The Agent inspects a workspace before changing it. Model output never grants permissions: every real tool operation passes through the permission layer.
 
-## Current version: 0.4.0
+## Current version: 0.5.0
 
 Implemented:
 - Python 3.11+
@@ -44,6 +44,8 @@ Implemented:
 - interactive CLI
 - Windows packaging and auto-update infrastructure
 - CI test workflow
+- end-to-end coverage for read, write and command lifecycles
+- updater safety coverage
 
 ## Security defaults
 
@@ -55,7 +57,7 @@ MATAIASU_ALLOW_COMMANDS=1
 MATAIASU_ALLOW_GIT=1
 ```
 
-Workspace paths are constrained when a `WorkspacePolicy` is used. Unknown tools are rejected and model output cannot grant capabilities.
+Workspace paths are constrained when a `WorkspacePolicy` is used. Unknown tools are rejected and model output cannot grant capabilities. An explicitly empty permission set grants no permissions.
 
 ## CLI
 
@@ -71,6 +73,12 @@ Workspace paths are constrained when a `WorkspacePolicy` is used. Unknown tools 
 ```
 
 `/run` is blocked unless `MATAIASU_ALLOW_COMMANDS=1` is set.
+
+## Project integration contract
+
+A controlled project is a workspace plus metadata. The Agent communicates through generic project information and tool operations; project-specific logic belongs in the project itself. This keeps MatAiasu 3D and Infinite Ascension independent from the Agent core.
+
+For a new project, register its workspace, inspect it, then use the permissioned tools for changes and validation.
 
 ## Development
 
