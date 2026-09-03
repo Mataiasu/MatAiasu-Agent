@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Callable
 
 from ..permissions import Permission, PermissionManager
@@ -21,13 +20,7 @@ class ToolSpec:
 class ToolRegistry:
     """Machine-readable allowlist for operations exposed to the agent."""
 
-    def __init__(
-        self,
-        files: FileTool | None = None,
-        shell: ShellTool | None = None,
-        git: GitTool | None = None,
-        permissions: PermissionManager | None = None,
-    ) -> None:
+    def __init__(self, files: FileTool | None = None, shell: ShellTool | None = None, git: GitTool | None = None, permissions: PermissionManager | None = None) -> None:
         self.files = files or FileTool()
         self.shell = shell or ShellTool()
         self.git = git or GitTool(self.shell)
@@ -69,7 +62,4 @@ class ToolRegistry:
         return handlers[name]
 
     def describe(self) -> list[dict[str, str]]:
-        return [
-            {"name": spec.name, "description": spec.description, "permission": spec.permission.value}
-            for spec in self.specs()
-        ]
+        return [{"name": spec.name, "description": spec.description, "permission": spec.permission.value} for spec in self.specs()]
