@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import os
+import shlex
 import sys
 
 from .core import MatAiasuAgent
 from .ollama import OllamaError
 from .updater import check_update, launch_update
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 
 
 def _auto_update() -> None:
@@ -29,7 +30,7 @@ def main() -> None:
     agent = MatAiasuAgent()
     print(f"MatAiasu Agent v{VERSION}")
     print("Local-first development agent initialized.")
-    print("Commands: /status, /scan <path>, /execute-readonly <path>, /ask <prompt>, /update, exit")
+    print("Commands: /status, /tools, /detect <path>, /scan <path>, /execute-readonly <path>, /ask <prompt>, /update, exit")
     while True:
         try:
             line = input("\nmat> ").strip()
@@ -44,6 +45,21 @@ def main() -> None:
             print(f"Version: {VERSION}")
             print(f"Ollama: {'available' if agent.local_model_status() else 'unavailable'}")
             print(f"Model: {agent.settings.model_name}")
+            print(f"Write permission: {agent.settings.allow_write}")
+            print(f"Command permission: {agent.settings.allow_commands}")
+            continue
+        if line == "/tools":
+            for tool in agent.available_tools():
+                print(f"- {tool['name']}: {tool['description']} [{tool['permission']}]")
+            continue
+        if line.startswith("/detect "):
+            try:
+                result = agent.detect_project(line[8:].strip())
+                print(f"Types: {', '.join(result['types'])}")
+                print(f"Primary: {result['primary_type']}")
+                print(f"Markers: {result['markers']}")
+            except (OSError, ValueError) as exc:
+                print(f"Detection error: {exc}")
             continue
         if line == "/update":
             result = check_update(VERSION)
@@ -58,6 +74,16 @@ def main() -> None:
             continue
         if line.startswith("/execute-readonly "):
             result = agent.execute_readonly("inspect workspace", line[18:].strip())
+            print(f"Task: {result.task.id}")
+            print(f"Status: {result.task.status.value}")
+            print(result.task.result)
+            continue
+        if line.startswith("/run "):
+            parts = shlex.split(line[5:].strip())
+            if len(parts) < 2:
+                print("Usage: /run <workspace> <command...>")
+                continue
+            result = agent.execute_command_task("run requested command", parts[1:], parts[0])
             print(f"Task: {result.task.id}")
             print(f"Status: {result.task.status.value}")
             print(result.task.result)
