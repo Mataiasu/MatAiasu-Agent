@@ -14,6 +14,7 @@ from .planner import TaskPlanner
 from .project_detector import ProjectDetector
 from .projects import ProjectRegistry
 from .tools.files import FileTool
+from .tools.git import GitTool
 from .tools.policy import WorkspacePolicy
 from .tools.registry import ToolRegistry
 from .tools.shell import ShellTool
@@ -48,12 +49,15 @@ class MatAiasuAgent:
             grants.add(Permission.WRITE_FILES)
         if self.settings.allow_commands:
             grants.add(Permission.RUN_COMMANDS)
+        if self.settings.allow_git:
+            grants.add(Permission.GIT)
         self.permissions = PermissionManager(grants)
         self.scanner = WorkspaceScanner()
         self.detector = ProjectDetector()
         self.files = FileTool()
         self.shell = ShellTool()
-        self.tools = ToolRegistry(self.files, self.shell)
+        self.git = GitTool(self.shell)
+        self.tools = ToolRegistry(self.files, self.shell, self.git, self.permissions)
         self.executor = AgentExecutor(self.permissions, self.files, self.shell)
         self.planner = TaskPlanner()
         self.validator = Validator(self.scanner)
@@ -85,6 +89,13 @@ class MatAiasuAgent:
 
     def available_tools(self) -> list[dict[str, str]]:
         return self.tools.describe()
+
+    def execute_tool(self, name: str, *args: object, **kwargs: object) -> object:
+        """Resolve and execute only a registered, permissioned tool."""
+        handler = self.tools.resolve(name)
+        result = handler(*args, **kwargs)
+        self.history.append("tool.executed", {"tool": name})
+        return result
 
     def execute_readonly(self, objective: str, root: str | Path) -> AgentResult:
         """Run a real, read-only task: plan, scan, validate and persist the result."""
