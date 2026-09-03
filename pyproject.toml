@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mataiasu-agent"
-version = "0.3.0"
+version = "0.4.0"
 description = "Local-first autonomous development agent for MatAiasu projects"
 requires-python = ">=3.11"
 dependencies = []
