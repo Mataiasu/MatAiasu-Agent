@@ -29,7 +29,7 @@ def main() -> None:
     agent = MatAiasuAgent()
     print(f"MatAiasu Agent v{VERSION}")
     print("Local-first development agent initialized.")
-    print("Commands: /status, /scan <path>, /ask <prompt>, exit")
+    print("Commands: /status, /scan <path>, /execute-readonly <path>, /ask <prompt>, /update, exit")
     while True:
         try:
             line = input("\nmat> ").strip()
@@ -55,6 +55,12 @@ def main() -> None:
                 print(f"Mise à jour {version} en cours...")
                 break
             print("La mise à jour nécessite une version Windows packagée.")
+            continue
+        if line.startswith("/execute-readonly "):
+            result = agent.execute_readonly("inspect workspace", line[18:].strip())
+            print(f"Task: {result.task.id}")
+            print(f"Status: {result.task.status.value}")
+            print(result.task.result)
             continue
         if line.startswith("/scan "):
             try:
