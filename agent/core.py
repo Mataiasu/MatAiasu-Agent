@@ -5,6 +5,7 @@ from uuid import uuid4
 from .config import Settings
 from .executor import AgentExecutor
 from .history import HistoryStore
+from .loop import AgentLoop
 from .memory.store import MemoryStore
 from .models import Event, Task, TaskStatus
 from .ollama import OllamaClient
@@ -12,6 +13,7 @@ from .permissions import Permission, PermissionManager
 from .planner import TaskPlanner
 from .projects import ProjectRegistry
 from .tools.files import FileTool
+from .tools.policy import WorkspacePolicy
 from .tools.shell import ShellTool
 from .tools.workspace import WorkspaceScanner
 from .validator import Validator
@@ -46,6 +48,7 @@ class MatAiasuAgent:
         self.executor = AgentExecutor(self.permissions, self.files, self.shell)
         self.planner = TaskPlanner()
         self.validator = Validator(self.scanner)
+        self.loop = AgentLoop()
         self.model = OllamaClient(self.settings.ollama_url, self.settings.model_name)
 
     def create_task(self, objective: str, project: str | None = None) -> Task:
@@ -71,11 +74,12 @@ class MatAiasuAgent:
         task.status = TaskStatus.RUNNING
         events = [Event("task.created", objective, {"task_id": task.id})]
         try:
+            policy = WorkspacePolicy(Path(root))
             self.permissions.require(Permission.READ_FILES)
             plan = self.planner.build(objective, has_workspace=True)
             task.steps = list(plan.steps)
-            scan = self.scanner.scan(Path(root))
-            validation = self.validator.workspace(Path(root))
+            scan = self.scanner.scan(policy.root)
+            validation = self.validator.workspace(policy.root)
             if not validation.ok:
                 raise ValueError(validation.message)
             task.status = TaskStatus.DONE
@@ -93,16 +97,46 @@ class MatAiasuAgent:
             self.history.append("task.failed", {"task_id": task.id, "error": task.result})
         return AgentResult(task, events)
 
-    def write_file(self, path: str | Path, content: str) -> None:
-        """Controlled write entry point; permission is checked immediately before writing."""
-        self.executor.write_file(Path(path), content)
-        self.history.append("file.written", {"path": str(Path(path).resolve())})
+    def write_file(self, path: str | Path, content: str, workspace: str | Path | None = None) -> None:
+        """Controlled write entry point with an optional workspace boundary."""
+        policy = WorkspacePolicy(Path(workspace)) if workspace else None
+        self.executor.write_file(Path(path), content, policy)
+        self.history.append("file.written", {"path": str((policy.resolve(Path(path)) if policy else Path(path)).resolve())})
 
     def run_command(self, command: list[str], cwd: str | Path, timeout: int = 120) -> tuple[int, str, str]:
         """Controlled command entry point; permission is checked immediately before execution."""
-        result = self.executor.run_command(command, Path(cwd), timeout)
-        self.history.append("command.executed", {"command": command, "cwd": str(Path(cwd).resolve()), "returncode": result[0]})
+        policy = WorkspacePolicy(Path(cwd))
+        result = self.executor.run_command(command, policy.root, timeout, policy)
+        self.history.append("command.executed", {"command": command, "cwd": str(policy.root), "returncode": result[0]})
         return result
+
+    def execute_command_task(self, objective: str, command: list[str], cwd: str | Path, timeout: int = 120) -> AgentResult:
+        """Execute one explicit command through the permissioned, bounded task lifecycle."""
+        task = self.create_task(objective)
+        task.status = TaskStatus.RUNNING
+        events = [Event("task.created", objective, {"task_id": task.id, "command": command})]
+        try:
+            policy = WorkspacePolicy(Path(cwd))
+            task.steps = list(self.planner.build(objective, has_workspace=True).steps)
+            self.permissions.require(Permission.RUN_COMMANDS)
+            code, stdout, stderr = self.executor.run_command(command, policy.root, timeout, policy)
+            validation = self.validator.command(code, stdout, stderr)
+            if not validation.ok:
+                task.status = TaskStatus.FAILED
+                task.result = validation.message
+            else:
+                task.status = TaskStatus.DONE
+                task.result = validation.message
+            events.append(Event("command.executed", task.result, {"returncode": code}))
+            self.history.append("task.completed" if task.status == TaskStatus.DONE else "task.failed", {
+                "task_id": task.id, "command": command, "returncode": code, "result": task.result,
+            })
+        except (OSError, ValueError, PermissionError) as exc:
+            task.status = TaskStatus.BLOCKED if isinstance(exc, PermissionError) else TaskStatus.FAILED
+            task.result = str(exc)
+            events.append(Event("task.failed", task.result, {"task_id": task.id}))
+            self.history.append("task.failed", {"task_id": task.id, "error": task.result})
+        return AgentResult(task, events)
 
     def validate_command(self, returncode: int, stdout: str, stderr: str) -> bool:
         return self.validator.command(returncode, stdout, stderr).ok
@@ -113,7 +147,8 @@ class MatAiasuAgent:
 
     def scan_workspace(self, root: str | Path) -> dict[str, object]:
         """Perform a read-only workspace scan."""
-        result = self.scanner.scan(Path(root))
+        policy = WorkspacePolicy(Path(root))
+        result = self.scanner.scan(policy.root)
         self.history.append("workspace.scanned", result)
         return result
 
