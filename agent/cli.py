@@ -12,17 +12,14 @@ VERSION = "0.4.0"
 
 
 def _auto_update() -> None:
-    if os.getenv("MATAIASU_AGENT_AUTO_UPDATE", "1").lower() in {"0", "false", "no"}:
-        return
-    if "--updated-from" in sys.argv:
+    if os.getenv("MATAIASU_AGENT_AUTO_UPDATE", "1").lower() in {"0", "false", "no"} or "--updated-from" in sys.argv:
         return
     result = check_update(VERSION)
-    if not result:
-        return
-    version, url = result
-    if launch_update(url, version):
-        print(f"Mise à jour {version} détectée. Installation en cours...")
-        raise SystemExit(0)
+    if result:
+        version, url = result
+        if launch_update(url, version):
+            print(f"Mise à jour {version} détectée. Installation en cours...")
+            raise SystemExit(0)
 
 
 def main() -> None:
@@ -66,18 +63,16 @@ def main() -> None:
             result = check_update(VERSION)
             if not result:
                 print("Aucune mise à jour disponible.")
-                continue
-            version, url = result
-            if launch_update(url, version):
-                print(f"Mise à jour {version} en cours...")
-                break
-            print("La mise à jour nécessite une version Windows packagée.")
+            else:
+                version, url = result
+                if launch_update(url, version):
+                    print(f"Mise à jour {version} en cours...")
+                    break
+                print("La mise à jour nécessite une version Windows packagée.")
             continue
         if line.startswith("/execute-readonly "):
             result = agent.execute_readonly("inspect workspace", line[18:].strip())
-            print(f"Task: {result.task.id}")
-            print(f"Status: {result.task.status.value}")
-            print(result.task.result)
+            print(f"Task: {result.task.id}\nStatus: {result.task.status.value}\n{result.task.result}")
             continue
         if line.startswith("/run "):
             try:
@@ -89,16 +84,12 @@ def main() -> None:
                 print("Usage: /run <workspace> <command...>")
                 continue
             result = agent.execute_command_task("run requested command", parts[1:], parts[0])
-            print(f"Task: {result.task.id}")
-            print(f"Status: {result.task.status.value}")
-            print(result.task.result)
+            print(f"Task: {result.task.id}\nStatus: {result.task.status.value}\n{result.task.result}")
             continue
         if line.startswith("/scan "):
             try:
                 result = agent.scan_workspace(line[6:].strip())
-                print(f"Workspace: {result['root']}")
-                print(f"Files: {result['file_count']}")
-                print(f"Extensions: {result['extensions']}")
+                print(f"Workspace: {result['root']}\nFiles: {result['file_count']}\nExtensions: {result['extensions']}")
             except (OSError, ValueError) as exc:
                 print(f"Scan error: {exc}")
             continue
