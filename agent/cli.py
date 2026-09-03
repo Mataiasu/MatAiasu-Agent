@@ -30,7 +30,7 @@ def main() -> None:
     agent = MatAiasuAgent()
     print(f"MatAiasu Agent v{VERSION}")
     print("Local-first development agent initialized.")
-    print("Commands: /status, /tools, /detect <path>, /scan <path>, /execute-readonly <path>, /ask <prompt>, /update, exit")
+    print("Commands: /status, /tools, /detect <path>, /scan <path>, /execute-readonly <path>, /run <workspace> <command...>, /ask <prompt>, /update, exit")
     while True:
         try:
             line = input("\nmat> ").strip()
@@ -47,6 +47,7 @@ def main() -> None:
             print(f"Model: {agent.settings.model_name}")
             print(f"Write permission: {agent.settings.allow_write}")
             print(f"Command permission: {agent.settings.allow_commands}")
+            print(f"Git permission: {agent.settings.allow_git}")
             continue
         if line == "/tools":
             for tool in agent.available_tools():
@@ -79,7 +80,11 @@ def main() -> None:
             print(result.task.result)
             continue
         if line.startswith("/run "):
-            parts = shlex.split(line[5:].strip())
+            try:
+                parts = shlex.split(line[5:].strip())
+            except ValueError as exc:
+                print(f"Command parsing error: {exc}")
+                continue
             if len(parts) < 2:
                 print("Usage: /run <workspace> <command...>")
                 continue
