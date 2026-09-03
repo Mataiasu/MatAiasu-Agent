@@ -3,15 +3,18 @@ from pathlib import Path
 from uuid import uuid4
 
 from .config import Settings
+from .executor import AgentExecutor
 from .history import HistoryStore
 from .memory.store import MemoryStore
 from .models import Event, Task, TaskStatus
 from .ollama import OllamaClient
 from .permissions import Permission, PermissionManager
+from .planner import TaskPlanner
 from .projects import ProjectRegistry
 from .tools.files import FileTool
 from .tools.shell import ShellTool
 from .tools.workspace import WorkspaceScanner
+from .validator import Validator
 
 
 @dataclass(slots=True)
@@ -40,6 +43,9 @@ class MatAiasuAgent:
         self.scanner = WorkspaceScanner()
         self.files = FileTool()
         self.shell = ShellTool()
+        self.executor = AgentExecutor(self.permissions, self.files, self.shell)
+        self.planner = TaskPlanner()
+        self.validator = Validator(self.scanner)
         self.model = OllamaClient(self.settings.ollama_url, self.settings.model_name)
 
     def create_task(self, objective: str, project: str | None = None) -> Task:
@@ -51,36 +57,33 @@ class MatAiasuAgent:
         task = self.create_task(objective, project)
         task.status = TaskStatus.RUNNING
         events = [Event("task.created", objective, {"task_id": task.id})]
-        task.steps = [
-            "Identify the target project",
-            "Inspect the actual workspace",
-            "Build an execution plan",
-            "Verify required permissions",
-            "Execute only approved changes",
-            "Run validation/tests",
-            "Record history and report results",
-        ]
+        plan = self.planner.build(objective, has_workspace=project is not None)
+        task.steps = list(plan.steps)
         task.status = TaskStatus.DONE
-        task.result = "Inspection/planning mode completed; no write or command permission was used."
-        self.history.append("task.planned", {"task_id": task.id, "objective": task.objective})
-        events.append(Event("task.planned", task.result, {"task_id": task.id}))
+        task.result = "Planning completed; no write or command permission was used."
+        self.history.append("task.planned", {"task_id": task.id, "objective": task.objective, "steps": task.steps})
+        events.append(Event("task.planned", task.result, {"task_id": task.id, "steps": task.steps}))
         return AgentResult(task, events)
 
     def execute_readonly(self, objective: str, root: str | Path) -> AgentResult:
-        """Run a real, read-only task: scan workspace and persist the result."""
+        """Run a real, read-only task: plan, scan, validate and persist the result."""
         task = self.create_task(objective)
         task.status = TaskStatus.RUNNING
         events = [Event("task.created", objective, {"task_id": task.id})]
         try:
             self.permissions.require(Permission.READ_FILES)
-            scan = self.scan_workspace(root)
-            task.steps = ["Inspect workspace", "Collect file statistics", "Record results"]
+            plan = self.planner.build(objective, has_workspace=True)
+            task.steps = list(plan.steps)
+            scan = self.scanner.scan(Path(root))
+            validation = self.validator.workspace(Path(root))
+            if not validation.ok:
+                raise ValueError(validation.message)
             task.status = TaskStatus.DONE
-            task.result = (
-                f"Workspace scanned: {scan['root']} | {scan['file_count']} files | "
-                f"extensions: {scan['extensions']}"
-            )
-            events.append(Event("workspace.scanned", task.result, scan))
+            task.result = f"{validation.message} | extensions: {scan['extensions']}"
+            events.extend([
+                Event("workspace.scanned", task.result, scan),
+                Event("task.validated", validation.message, {"ok": validation.ok}),
+            ])
             self.memory.add(task.result, kind="execution")
             self.history.append("task.completed", {"task_id": task.id, "result": task.result})
         except (OSError, ValueError, PermissionError) as exc:
@@ -89,6 +92,20 @@ class MatAiasuAgent:
             events.append(Event("task.failed", task.result, {"task_id": task.id}))
             self.history.append("task.failed", {"task_id": task.id, "error": task.result})
         return AgentResult(task, events)
+
+    def write_file(self, path: str | Path, content: str) -> None:
+        """Controlled write entry point; permission is checked immediately before writing."""
+        self.executor.write_file(Path(path), content)
+        self.history.append("file.written", {"path": str(Path(path).resolve())})
+
+    def run_command(self, command: list[str], cwd: str | Path, timeout: int = 120) -> tuple[int, str, str]:
+        """Controlled command entry point; permission is checked immediately before execution."""
+        result = self.executor.run_command(command, Path(cwd), timeout)
+        self.history.append("command.executed", {"command": command, "cwd": str(Path(cwd).resolve()), "returncode": result[0]})
+        return result
+
+    def validate_command(self, returncode: int, stdout: str, stderr: str) -> bool:
+        return self.validator.command(returncode, stdout, stderr).ok
 
     def ask_local_model(self, prompt: str) -> str:
         """Ask the configured local model without granting it any tools."""
