@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 from .shell import ShellTool
 
 
 class GitTool:
-    """Read-only Git inspection helpers."""
+    """Safe Git inspection helpers."""
 
     def __init__(self, shell: ShellTool | None = None) -> None:
         self.shell = shell or ShellTool()
@@ -17,3 +19,6 @@ class GitTool:
 
     def root(self, cwd: Path) -> tuple[int, str, str]:
         return self.shell.run(["git", "rev-parse", "--show-toplevel"], cwd)
+
+    def head(self, cwd: Path) -> tuple[int, str, str]:
+        return self.shell.run(["git", "rev-parse", "HEAD"], cwd)
