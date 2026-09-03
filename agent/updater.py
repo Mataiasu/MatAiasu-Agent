@@ -51,25 +51,33 @@ def check_update(current_version: str) -> tuple[str, str] | None:
 
 
 def launch_update(download_url: str, version: str) -> bool:
+    # Never attempt a self-update while running from Python source. In that
+    # case sys.executable is python.exe, not MatAiasu-Agent.exe.
+    if not getattr(sys, "frozen", False):
+        return False
+
     target = Path(sys.executable).resolve()
     if target.suffix.lower() != ".exe":
         return False
 
     updater = target.with_name("MatAiasu-Agent-Updater.exe")
-    if updater.exists():
-        command = [str(updater), "--apply", download_url, version, str(target)]
-    else:
-        command = [
-            sys.executable,
-            "-m",
-            "agent.updater",
-            "--apply",
-            download_url,
-            version,
-            str(target),
-        ]
-    subprocess.Popen(command, close_fds=True)
+    if not updater.exists():
+        return False
+
+    subprocess.Popen(
+        [str(updater), "--apply", download_url, version, str(target)],
+        close_fds=True,
+    )
     return True
+
+
+def _safe_extract(bundle: zipfile.ZipFile, destination: Path) -> None:
+    root = destination.resolve()
+    for member in bundle.infolist():
+        target = (destination / member.filename).resolve()
+        if root not in target.parents and target != root:
+            raise ValueError("Unsafe path in update archive")
+    bundle.extractall(destination)
 
 
 def apply_update(download_url: str, version: str, target: Path) -> int:
@@ -88,7 +96,7 @@ def apply_update(download_url: str, version: str, target: Path) -> int:
             shutil.copyfileobj(response, output)
         extracted.mkdir()
         with zipfile.ZipFile(archive) as bundle:
-            bundle.extractall(extracted)
+            _safe_extract(bundle, extracted)
 
         new_exe = next(extracted.rglob(target.name), None)
         if new_exe is None:
@@ -108,6 +116,8 @@ def apply_update(download_url: str, version: str, target: Path) -> int:
 
         subprocess.Popen([str(target), "--updated-from", version], close_fds=True)
         return 0
+    except (OSError, ValueError, zipfile.BadZipFile):
+        return 4
     finally:
         shutil.rmtree(temp_root, ignore_errors=True)
 
