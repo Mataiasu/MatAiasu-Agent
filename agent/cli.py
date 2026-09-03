@@ -1,10 +1,33 @@
+from __future__ import annotations
+
+import os
+import sys
+
 from .core import MatAiasuAgent
 from .ollama import OllamaError
+from .updater import check_update, launch_update
+
+VERSION = "0.3.0"
+
+
+def _auto_update() -> None:
+    if os.getenv("MATAIASU_AGENT_AUTO_UPDATE", "1").lower() in {"0", "false", "no"}:
+        return
+    if "--updated-from" in sys.argv:
+        return
+    result = check_update(VERSION)
+    if not result:
+        return
+    version, url = result
+    if launch_update(url, version):
+        print(f"Mise à jour {version} détectée. Installation en cours...")
+        raise SystemExit(0)
 
 
 def main() -> None:
+    _auto_update()
     agent = MatAiasuAgent()
-    print("MatAiasu Agent v0.2.0")
+    print(f"MatAiasu Agent v{VERSION}")
     print("Local-first development agent initialized.")
     print("Commands: /status, /scan <path>, /ask <prompt>, exit")
     while True:
@@ -18,8 +41,20 @@ def main() -> None:
         if not line:
             continue
         if line == "/status":
+            print(f"Version: {VERSION}")
             print(f"Ollama: {'available' if agent.local_model_status() else 'unavailable'}")
             print(f"Model: {agent.settings.model_name}")
+            continue
+        if line == "/update":
+            result = check_update(VERSION)
+            if not result:
+                print("Aucune mise à jour disponible.")
+                continue
+            version, url = result
+            if launch_update(url, version):
+                print(f"Mise à jour {version} en cours...")
+                break
+            print("La mise à jour nécessite une version Windows packagée.")
             continue
         if line.startswith("/scan "):
             try:
