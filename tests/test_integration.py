@@ -26,7 +26,7 @@ def test_command_cycle_runs_with_explicit_permission(tmp_path: Path) -> None:
     agent = MatAiasuAgent(settings)
     result = agent.execute_command_task("run smoke test", ["python", "-c", "print('ok')"], tmp_path)
     assert result.task.status.value == "done"
-    assert result.task.result.startswith("Command succeeded")
+    assert result.task.result == "ok"
 
 
 def test_write_cycle_requires_and_uses_explicit_permission(tmp_path: Path) -> None:
