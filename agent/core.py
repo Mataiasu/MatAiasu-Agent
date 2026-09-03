@@ -11,9 +11,11 @@ from .models import Event, Task, TaskStatus
 from .ollama import OllamaClient
 from .permissions import Permission, PermissionManager
 from .planner import TaskPlanner
+from .project_detector import ProjectDetector
 from .projects import ProjectRegistry
 from .tools.files import FileTool
 from .tools.policy import WorkspacePolicy
+from .tools.registry import ToolRegistry
 from .tools.shell import ShellTool
 from .tools.workspace import WorkspaceScanner
 from .validator import Validator
@@ -48,8 +50,10 @@ class MatAiasuAgent:
             grants.add(Permission.RUN_COMMANDS)
         self.permissions = PermissionManager(grants)
         self.scanner = WorkspaceScanner()
+        self.detector = ProjectDetector()
         self.files = FileTool()
         self.shell = ShellTool()
+        self.tools = ToolRegistry(self.files, self.shell)
         self.executor = AgentExecutor(self.permissions, self.files, self.shell)
         self.planner = TaskPlanner()
         self.validator = Validator(self.scanner)
@@ -72,6 +76,15 @@ class MatAiasuAgent:
         self.history.append("task.planned", {"task_id": task.id, "objective": task.objective, "steps": task.steps})
         events.append(Event("task.planned", task.result, {"task_id": task.id, "steps": task.steps}))
         return AgentResult(task, events)
+
+    def detect_project(self, root: str | Path) -> dict[str, object]:
+        policy = WorkspacePolicy(Path(root))
+        result = self.detector.detect(policy.root)
+        self.history.append("project.detected", result)
+        return result
+
+    def available_tools(self) -> list[dict[str, str]]:
+        return self.tools.describe()
 
     def execute_readonly(self, objective: str, root: str | Path) -> AgentResult:
         """Run a real, read-only task: plan, scan, validate and persist the result."""
@@ -103,20 +116,17 @@ class MatAiasuAgent:
         return AgentResult(task, events)
 
     def write_file(self, path: str | Path, content: str, workspace: str | Path | None = None) -> None:
-        """Controlled write entry point with an optional workspace boundary."""
         policy = WorkspacePolicy(Path(workspace)) if workspace else None
         self.executor.write_file(Path(path), content, policy)
         self.history.append("file.written", {"path": str((policy.resolve(Path(path)) if policy else Path(path)).resolve())})
 
     def run_command(self, command: list[str], cwd: str | Path, timeout: int = 120) -> tuple[int, str, str]:
-        """Controlled command entry point; permission is checked immediately before execution."""
         policy = WorkspacePolicy(Path(cwd))
         result = self.executor.run_command(command, policy.root, timeout, policy)
         self.history.append("command.executed", {"command": command, "cwd": str(policy.root), "returncode": result[0]})
         return result
 
     def execute_command_task(self, objective: str, command: list[str], cwd: str | Path, timeout: int = 120) -> AgentResult:
-        """Execute one explicit command through the permissioned task lifecycle."""
         task = self.create_task(objective)
         task.status = TaskStatus.RUNNING
         events = [Event("task.created", objective, {"task_id": task.id, "command": command})]
@@ -143,11 +153,9 @@ class MatAiasuAgent:
         return self.validator.command(returncode, stdout, stderr).ok
 
     def ask_local_model(self, prompt: str) -> str:
-        """Ask the configured local model without granting it any tools."""
         return self.model.chat(prompt, system=self.SYSTEM_PROMPT)
 
     def scan_workspace(self, root: str | Path) -> dict[str, object]:
-        """Perform a read-only workspace scan."""
         policy = WorkspacePolicy(Path(root))
         result = self.scanner.scan(policy.root)
         self.history.append("workspace.scanned", result)
