@@ -24,3 +24,11 @@ def test_project_registry(tmp_path: Path) -> None:
     registry = ProjectRegistry(tmp_path)
     registry.add(Project("Demo", "/workspace/demo"))
     assert registry.list()[0].name == "Demo"
+
+
+def test_readonly_execution(tmp_path: Path) -> None:
+    (tmp_path / "main.py").write_text("print('ok')", encoding="utf-8")
+    agent = MatAiasuAgent(Settings(data_dir=tmp_path / "data"))
+    result = agent.execute_readonly("inspect workspace", tmp_path)
+    assert result.task.status.value == "done"
+    assert "1 files" in result.task.result
