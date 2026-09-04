@@ -64,7 +64,7 @@ class MatAiasuAgent:
         self.validator = Validator(self.scanner)
         self.loop = AgentLoop()
         self.model = OllamaClient(self.settings.ollama_url, self.settings.model_name)
-        self.orchestrator = AgentOrchestrator(self.model, self.tools, self.permissions)
+        self.orchestrator = AgentOrchestrator(self.model, self.tools, self.permissions, self.history)
 
     def create_task(self, objective: str, project: str | None = None) -> Task:
         if not objective.strip():
@@ -104,6 +104,7 @@ class MatAiasuAgent:
         task = self.create_task(objective, str(root))
         task.status = TaskStatus.RUNNING
         events = [Event("task.created", objective, {"task_id": task.id, "workspace": str(Path(root).resolve())})]
+        self.history.append("task.started", {"task_id": task.id, "objective": task.objective, "workspace": str(Path(root).resolve())})
         try:
             result = self.orchestrator.run(objective, root)
             task.result = result.message
