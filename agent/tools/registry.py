@@ -35,6 +35,14 @@ class ToolRegistry:
             "git_diff": ToolSpec("git_diff", "Inspect Git diff", Permission.GIT),
             "git_root": ToolSpec("git_root", "Find Git repository root", Permission.GIT),
             "git_head": ToolSpec("git_head", "Read current Git commit", Permission.GIT),
+            "git_log": ToolSpec("git_log", "Inspect recent Git commits", Permission.GIT),
+            "git_branches": ToolSpec("git_branches", "List local Git branches", Permission.GIT),
+            "git_remote": ToolSpec("git_remote", "Inspect configured Git remotes", Permission.GIT),
+            "git_add": ToolSpec("git_add", "Stage selected files in Git", Permission.GIT),
+            "git_commit": ToolSpec("git_commit", "Create a Git commit", Permission.GIT),
+            "git_fetch": ToolSpec("git_fetch", "Fetch Git remotes and prune stale refs", Permission.GIT),
+            "git_pull": ToolSpec("git_pull", "Fast-forward Git working tree from its upstream", Permission.GIT),
+            "git_push": ToolSpec("git_push", "Push the current Git branch to its upstream", Permission.GIT),
         }
 
     def specs(self) -> tuple[ToolSpec, ...]:
@@ -58,6 +66,14 @@ class ToolRegistry:
             "git_diff": self.git.diff,
             "git_root": self.git.root,
             "git_head": self.git.head,
+            "git_log": self.git.log,
+            "git_branches": self.git.branches,
+            "git_remote": self.git.remote,
+            "git_add": self.git.add,
+            "git_commit": self.git.commit,
+            "git_fetch": self.git.fetch,
+            "git_pull": self.git.pull,
+            "git_push": self.git.push,
         }
         return handlers[name]
 
