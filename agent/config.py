@@ -9,7 +9,7 @@ class Settings:
 
     data_dir: Path = field(default_factory=lambda: Path(os.getenv("MATAIASU_DATA_DIR", ".data")))
     model_provider: str = field(default_factory=lambda: os.getenv("MATAIASU_MODEL_PROVIDER", "ollama"))
-    model_name: str = field(default_factory=lambda: os.getenv("MATAIASU_MODEL_NAME", "qwen3"))
+    model_name: str = field(default_factory=lambda: os.getenv("MATAIASU_MODEL_NAME", "qwen2.5-coder:7b"))
     ollama_url: str = field(default_factory=lambda: os.getenv("MATAIASU_OLLAMA_URL", "http://127.0.0.1:11434"))
     workspace_root: Path = field(default_factory=lambda: Path(os.getenv("MATAIASU_WORKSPACE", ".")))
     allow_write: bool = field(default_factory=lambda: os.getenv("MATAIASU_ALLOW_WRITE", "0").lower() in {"1", "true", "yes"})
