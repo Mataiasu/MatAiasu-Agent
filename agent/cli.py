@@ -27,7 +27,7 @@ def main() -> None:
     agent = MatAiasuAgent()
     print(f"MatAiasu Agent v{VERSION}")
     print("Local-first development agent initialized.")
-    print("Commands: /status, /tools, /detect <path>, /scan <path>, /execute-readonly <path>, /run <workspace> <command...>, /ask <prompt>, /update, exit")
+    print("Commands: /status, /tools, /detect <path>, /scan <path>, /agent <workspace> <task>, /execute-readonly <path>, /run <workspace> <command...>, /ask <prompt>, /update, exit")
     while True:
         try:
             line = input("\nmat> ").strip()
@@ -69,6 +69,24 @@ def main() -> None:
                     print(f"Mise à jour {version} en cours...")
                     break
                 print("La mise à jour nécessite une version Windows packagée.")
+            continue
+        if line.startswith("/agent "):
+            try:
+                parts = shlex.split(line[7:].strip())
+            except ValueError as exc:
+                print(f"Agent parsing error: {exc}")
+                continue
+            if len(parts) < 2:
+                print("Usage: /agent <workspace> <task>")
+                continue
+            workspace = parts[0]
+            objective = " ".join(parts[1:])
+            try:
+                result = agent.run_agent_task(objective, workspace)
+                print(f"Task: {result.task.id}\nStatus: {result.task.status.value}\n{result.task.result}")
+                print(f"Events: {len(result.events)}")
+            except OllamaError as exc:
+                print(f"Ollama error: {exc}")
             continue
         if line.startswith("/execute-readonly "):
             result = agent.execute_readonly("inspect workspace", line[18:].strip())
