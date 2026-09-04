@@ -9,6 +9,7 @@ from .loop import AgentLoop
 from .memory.store import MemoryStore
 from .models import Event, Task, TaskStatus
 from .ollama import OllamaClient
+from .orchestrator import AgentOrchestrator
 from .permissions import Permission, PermissionManager
 from .planner import TaskPlanner
 from .project_detector import ProjectDetector
@@ -63,6 +64,7 @@ class MatAiasuAgent:
         self.validator = Validator(self.scanner)
         self.loop = AgentLoop()
         self.model = OllamaClient(self.settings.ollama_url, self.settings.model_name)
+        self.orchestrator = AgentOrchestrator(self.model, self.tools, self.permissions)
 
     def create_task(self, objective: str, project: str | None = None) -> Task:
         if not objective.strip():
@@ -96,6 +98,32 @@ class MatAiasuAgent:
         result = handler(*args, **kwargs)
         self.history.append("tool.executed", {"tool": name})
         return result
+
+    def run_agent_task(self, objective: str, root: str | Path) -> AgentResult:
+        """Run the bounded model -> tool -> result loop inside one workspace."""
+        task = self.create_task(objective, str(root))
+        task.status = TaskStatus.RUNNING
+        events = [Event("task.created", objective, {"task_id": task.id, "workspace": str(Path(root).resolve())})]
+        try:
+            result = self.orchestrator.run(objective, root)
+            task.result = result.message
+            task.status = TaskStatus.DONE if result.stopped == "completed" else TaskStatus.FAILED
+            events.extend(Event(item.get("type", "agent.event"), str(item.get("message", item.get("error", ""))), item) for item in result.events)
+            self.memory.add(task.result, kind="execution")
+            self.history.append("task.completed" if task.status == TaskStatus.DONE else "task.failed", {
+                "task_id": task.id,
+                "objective": task.objective,
+                "turns": result.turns,
+                "tool_calls": result.tool_calls,
+                "stopped": result.stopped,
+                "result": task.result,
+            })
+        except (OSError, ValueError, PermissionError) as exc:
+            task.status = TaskStatus.BLOCKED if isinstance(exc, PermissionError) else TaskStatus.FAILED
+            task.result = str(exc)
+            events.append(Event("task.failed", task.result, {"task_id": task.id}))
+            self.history.append("task.failed", {"task_id": task.id, "error": task.result})
+        return AgentResult(task, events)
 
     def execute_readonly(self, objective: str, root: str | Path) -> AgentResult:
         """Run a real, read-only task: plan, scan, validate and persist the result."""
