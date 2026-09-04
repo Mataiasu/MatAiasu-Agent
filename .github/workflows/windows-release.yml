@@ -30,10 +30,22 @@ jobs:
           pip install -e .
 
       - name: Build Agent
-        run: pyinstaller --noconfirm --clean --onefile --name MatAiasu-Agent --hidden-import agent.updater agent/cli.py
+        run: pyinstaller --noconfirm --clean --onefile --name MatAiasu-Agent mataiasu_agent_launcher.py
 
       - name: Build Updater
         run: pyinstaller --noconfirm --clean --onefile --name MatAiasu-Agent-Updater agent/updater.py
+
+      - name: Smoke test Agent executable
+        shell: pwsh
+        env:
+          MATAIASU_AGENT_AUTO_UPDATE: "0"
+        run: |
+          $output = "exit" | & .\dist\MatAiasu-Agent.exe 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host $output
+            throw "MatAiasu-Agent.exe smoke test failed with exit code $LASTEXITCODE"
+          }
+          Write-Host $output
 
       - name: Package Windows build
         shell: pwsh
