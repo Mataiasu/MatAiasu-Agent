@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .history import HistoryStore
 from .ollama import OllamaClient
 from .permissions import PermissionManager
 from .tools.policy import WorkspacePolicy
@@ -23,12 +24,25 @@ class OrchestrationResult:
 class AgentOrchestrator:
     """Bounded model/tool loop. Model output never bypasses the tool registry."""
 
-    def __init__(self, model: OllamaClient, tools: ToolRegistry, permissions: PermissionManager, max_turns: int = 12, max_tool_calls: int = 30) -> None:
+    def __init__(
+        self,
+        model: OllamaClient,
+        tools: ToolRegistry,
+        permissions: PermissionManager,
+        history: HistoryStore | None = None,
+        max_turns: int = 12,
+        max_tool_calls: int = 30,
+    ) -> None:
         self.model = model
         self.tools = tools
         self.permissions = permissions
+        self.history = history
         self.max_turns = max(1, max_turns)
         self.max_tool_calls = max(1, max_tool_calls)
+
+    def _record(self, event_type: str, data: dict[str, Any]) -> None:
+        if self.history is not None:
+            self.history.append(event_type, data)
 
     def _parse(self, response: str) -> dict[str, Any]:
         text = response.strip()
@@ -59,7 +73,6 @@ class AgentOrchestrator:
             cwd = Path(str(args.pop("cwd", policy.root)))
             resolved = policy.resolve(cwd)
             if name.startswith("git_") and not (resolved / ".git").exists():
-                # Git worktrees may keep a file at .git instead of a directory.
                 if not (resolved / ".git").is_file():
                     raise ValueError("cwd is not a Git repository")
             args["cwd"] = str(resolved)
@@ -92,6 +105,9 @@ class AgentOrchestrator:
         return args
 
     def run(self, objective: str, workspace: str | Path) -> OrchestrationResult:
+        objective = objective.strip()
+        if not objective:
+            raise ValueError("Objective cannot be empty")
         policy = WorkspacePolicy(Path(workspace))
         tool_description = json.dumps(self.tools.describe(), ensure_ascii=False)
         system = (
@@ -102,36 +118,52 @@ class AgentOrchestrator:
             "Use the smallest safe action. Inspect before modifying. Never claim an action succeeded unless its tool result says so. "
             f"Available tools: {tool_description}"
         )
-        prompt = f"Workspace: {policy.root}\nObjective: {objective.strip()}\nBegin by inspecting the project."
+        prompt = f"Workspace: {policy.root}\nObjective: {objective}\nBegin by inspecting the project."
         events: list[dict[str, Any]] = []
         tool_calls = 0
+        self._record("orchestration.started", {"objective": objective, "workspace": str(policy.root)})
         for turn in range(1, self.max_turns + 1):
             response = self.model.chat(prompt, system=system)
             try:
                 action = self._parse(response)
             except ValueError as exc:
-                events.append({"type": "model.invalid", "error": str(exc), "turn": turn})
+                event = {"type": "model.invalid", "error": str(exc), "turn": turn}
+                events.append(event)
+                self._record("orchestration.event", event)
                 return OrchestrationResult("Model returned an invalid action; execution stopped safely.", turn, tool_calls, events, "invalid_model_output")
             if action["type"] == "final":
                 message = str(action.get("message", "")).strip()
-                events.append({"type": "agent.final", "message": message, "turn": turn})
+                event = {"type": "agent.final", "message": message, "turn": turn}
+                events.append(event)
+                self._record("orchestration.event", event)
                 return OrchestrationResult(message, turn, tool_calls, events)
             if tool_calls >= self.max_tool_calls:
-                events.append({"type": "agent.limit", "limit": self.max_tool_calls})
+                event = {"type": "agent.limit", "limit": self.max_tool_calls}
+                events.append(event)
+                self._record("orchestration.event", event)
                 return OrchestrationResult("Tool-call limit reached; execution stopped safely.", turn, tool_calls, events, "tool_limit")
             name = action.get("tool")
             if not isinstance(name, str) or not name:
+                event = {"type": "agent.invalid_tool", "turn": turn}
+                events.append(event)
+                self._record("orchestration.event", event)
                 return OrchestrationResult("Missing tool name; execution stopped safely.", turn, tool_calls, events, "invalid_tool")
             try:
                 args = self._safe_args(name, action.get("args", {}), policy)
                 result = self.tools.resolve(name)(**args)
                 tool_calls += 1
-                events.append({"type": "tool.executed", "tool": name, "turn": turn})
+                event = {"type": "tool.executed", "tool": name, "turn": turn}
+                events.append(event)
+                self._record("orchestration.event", event)
                 serialized = json.dumps(result, ensure_ascii=False, default=str)
                 prompt = f"Previous tool: {name}\nResult: {serialized}\nContinue the objective."
             except Exception as exc:
                 tool_calls += 1
-                events.append({"type": "tool.failed", "tool": name, "turn": turn, "error": str(exc)})
+                event = {"type": "tool.failed", "tool": name, "turn": turn, "error": str(exc)}
+                events.append(event)
+                self._record("orchestration.event", event)
                 prompt = f"Previous tool: {name}\nTool failed with: {exc}\nAnalyze the failure and continue safely."
-        events.append({"type": "agent.limit", "limit": self.max_turns})
+        event = {"type": "agent.limit", "limit": self.max_turns}
+        events.append(event)
+        self._record("orchestration.event", event)
         return OrchestrationResult("Turn limit reached; execution stopped safely.", self.max_turns, tool_calls, events, "turn_limit")
